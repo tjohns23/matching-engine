@@ -1,0 +1,21 @@
+# Prerequisites
+*.d
+*.o
+*.a
+
+# Executables
+*.exe
+
+# Clangd cache
+.cache/
+
+# CMake build directories and artifacts
+build/
+bin/
+lib/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json

@@ -3,21 +3,16 @@
 
 #include <list>
 
-
-#include "order.h"
 #include "order-book.h"
-
-
-
+#include "order.h"
 
 class matching_engine {
-    private:
-        OrderBook book;
+private:
+  OrderBook book;
 
-    public:
-        void submit_order(Order order);
-
+public:
+  void submit_order(Order &order);
+  void cancel_order(OrderId id);
 };
-
 
 #endif
