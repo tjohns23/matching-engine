@@ -40,3 +40,19 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(order_book_tests)
+
+include(FetchContent)
+
+# Disable Google Benchmark's own tests so your build stays fast
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+  googlebenchmark
+  GIT_REPOSITORY https://github.com/google/benchmark.git
+  GIT_TAG        v1.8.3 # Use a stable release tag
+)
+FetchContent_MakeAvailable(googlebenchmark)
+
+# Link your executable against it
+add_executable(my_benchmark my_benchmark.cpp)
+target_link_libraries(my_benchmark PRIVATE benchmark::benchmark)

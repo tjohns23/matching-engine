@@ -99,6 +99,8 @@ void OrderBook::match_buy(Order &order) {
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
 
+      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
       }
@@ -128,6 +130,8 @@ void OrderBook::match_buy(Order &order) {
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
 
+      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
       }
@@ -155,6 +159,8 @@ void OrderBook::match_sell(Order &order) {
       order.remaining_qty -= fill;
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
+
+      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
@@ -184,6 +190,8 @@ void OrderBook::match_sell(Order &order) {
       order.remaining_qty -= fill;
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
+
+      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
