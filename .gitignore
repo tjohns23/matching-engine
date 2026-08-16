@@ -11,6 +11,7 @@
 
 # CMake build directories and artifacts
 build/
+build-linux/
 bin/
 lib/
 CMakeCache.txt
@@ -19,3 +20,7 @@ Makefile
 cmake_install.cmake
 CTestTestfile.cmake
 compile_commands.json
+
+
+# Data 
+*.csv
