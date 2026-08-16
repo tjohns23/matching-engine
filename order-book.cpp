@@ -78,11 +78,11 @@ void OrderBook::cancel_order(OrderId id) {
   // Remove the order
   bool was_removed = remove_order(id);
   if (was_removed) {
-    events.push_back("[LOG] Order " + std::to_string(id) +
-                     " successfully canceled.");
+    // events.push_back("[LOG] Order " + std::to_string(id) +
+    //  " successfully canceled.");
   } else {
-    events.push_back("[LOG] Cancel failed: Order " + std::to_string(id) +
-                     " could not be found ");
+    // events.push_back("[LOG] Cancel failed: Order " + std::to_string(id) +
+    //                  " could not be found ");
   }
 }
 
@@ -99,18 +99,21 @@ void OrderBook::match_buy(Order &order) {
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
 
-      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      //   last_trades.push_back(Trade{resting.id, order.id, resting.price,
+      //   fill});
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
       }
     }
     if (order.remaining_qty > 0) {
-      events.push_back("[LOG] Market buy order " + std::to_string(order.id) +
-                       " failed (insufficient asks)");
+      //   events.push_back("[LOG] Market buy order " + std::to_string(order.id)
+      //   +
+      //    " failed (insufficient asks)");
     } else {
-      events.push_back("[LOG] Market buy order " + std::to_string(order.id) +
-                       " successfully filled.");
+      //   events.push_back("[LOG] Market buy order " + std::to_string(order.id)
+      //   +
+      //                    " successfully filled.");
     }
     break;
   }
@@ -138,8 +141,9 @@ void OrderBook::match_buy(Order &order) {
     }
 
     if (order.remaining_qty == 0) {
-      events.push_back("[LOG] Limit buy order " + std::to_string(order.id) +
-                       " successfully filled.");
+      //   events.push_back("[LOG] Limit buy order " + std::to_string(order.id)
+      //   +
+      //                    " successfully filled.");
     }
 
     break;
@@ -167,11 +171,13 @@ void OrderBook::match_sell(Order &order) {
       }
     }
     if (order.remaining_qty > 0) {
-      events.push_back("[LOG] Market sell order " + std::to_string(order.id) +
-                       " failed (insufficient bids)");
+      //   events.push_back("[LOG] Market sell order " +
+      //   std::to_string(order.id) +
+      //                    " failed (insufficient bids)");
     } else {
-      events.push_back("[LOG] Market sell order " + std::to_string(order.id) +
-                       " successfully filled.");
+      //   events.push_back("[LOG] Market sell order " +
+      //   std::to_string(order.id) +
+      //                    " successfully filled.");
     }
     break;
   }
@@ -191,7 +197,8 @@ void OrderBook::match_sell(Order &order) {
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
 
-      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      //   last_trades.push_back(Trade{resting.id, order.id, resting.price,
+      //   fill});
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
@@ -199,8 +206,9 @@ void OrderBook::match_sell(Order &order) {
     }
 
     if (order.remaining_qty == 0) {
-      events.push_back("[LOG] Limit sell order " + std::to_string(order.id) +
-                       " successfully filled.");
+      // events.push_back("[LOG] Limit sell order " + std::to_string(order.id)
+      // +
+      //                  " successfully filled.");
     }
 
     break;
@@ -221,12 +229,12 @@ void OrderBook::submit_order(Order &order) {
   if (order.remaining_qty > 0) {
     if (order.type == Type::Limit) {
       add_order(order);
-      events.push_back("[LOG] Limit order " + std::to_string(order.id) +
-                       " successfully added to book.");
+      //   events.push_back("[LOG] Limit order " + std::to_string(order.id) +
+      //                    " successfully added to book.");
     } else {
-      events.push_back("[LOG] Market Order " + std::to_string(order.id) +
-                       " could not be fully filled. Unfilled quantity: " +
-                       std::to_string(order.remaining_qty));
+      //   events.push_back("[LOG] Market Order " + std::to_string(order.id) +
+      //                    " could not be fully filled. Unfilled quantity: " +
+      //                    std::to_string(order.remaining_qty));
     }
   }
 }

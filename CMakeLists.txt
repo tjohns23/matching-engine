@@ -4,6 +4,13 @@ project(OrderBook LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Add debug symbols and high optimization globally
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -g")
+
+# Default to RelWithDebInfo so we get -O3 optimization PLUS debug symbols (-g) for perf
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose Release, RelWithDebInfo, Debug, or MinSizeRel" FORCE)
+endif()
 
 # Project Library (Engine and OrderBook)
 add_library(order_book_core
@@ -15,9 +22,9 @@ target_include_directories(order_book_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # --- Fetch GoogleTest ---
 include(FetchContent)
 FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 # For Windows: prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -41,20 +48,10 @@ endif()
 include(GoogleTest)
 gtest_discover_tests(order_book_tests)
 
-add_executable(generate-market-data generate-market-data.cpp)
+# --- Simulation Executable ---
+add_executable(simulation simulation.cpp)
+target_link_libraries(simulation PRIVATE order_book_core)
 
-# include(FetchContent)
-
-# # Disable Google Benchmark's own tests so your build stays fast
-# set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-
-# FetchContent_Declare(
-#   googlebenchmark
-#   GIT_REPOSITORY https://github.com/google/benchmark.git
-#   GIT_TAG        v1.8.3 # Use a stable release tag
-# )
-# FetchContent_MakeAvailable(googlebenchmark)
-
-# # Link your executable against it
-# add_executable(my_benchmark my_benchmark.cpp)
-# target_link_libraries(my_benchmark PRIVATE benchmark::benchmark)
+if (MINGW)
+    target_link_options(simulation PRIVATE -static -static-libgcc -static-libstdc++)
+endif()

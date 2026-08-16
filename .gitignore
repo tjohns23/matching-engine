@@ -24,3 +24,6 @@ compile_commands.json
 
 # Data 
 *.csv
+
+
+venv
