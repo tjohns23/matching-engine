@@ -33,8 +33,15 @@ FetchContent_MakeAvailable(googletest)
 # --- Test Executable ---
 enable_testing()
 
-add_executable(order_book_tests test.cpp)
+add_executable(order_book_tests tests/order-book-tests.cpp)
 target_link_libraries(order_book_tests
+    PRIVATE
+    order_book_core
+    GTest::gtest_main
+)
+
+add_executable(order_pool_tests tests/order-pool-tests.cpp)
+target_link_libraries(order_pool_tests
     PRIVATE
     order_book_core
     GTest::gtest_main
@@ -43,10 +50,12 @@ target_link_libraries(order_book_tests
 # Statically link MinGW runtime to avoid missing DLL errors (0xc0000139)
 if (MINGW)
     target_link_options(order_book_tests PRIVATE -static -static-libgcc -static-libstdc++)
+    target_link_options(order_pool_tests PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 
 include(GoogleTest)
 gtest_discover_tests(order_book_tests)
+gtest_discover_tests(order_pool_tests)
 
 # --- Simulation Executable ---
 add_executable(simulation simulation.cpp)

@@ -3,29 +3,61 @@
 #include <iostream>
 #include <stdexcept>
 
+bool SHOULD_LOG = false;
+
+void OrderBook::push_back(PriceLevel &level, PoolIndex index) {
+  Order &order = pool[index];
+  order.prev = level.tail;
+  order.next = kInvalidIndex;
+
+  // Check if the list has orders already
+  if (level.tail != kInvalidIndex) {
+    pool[level.tail].next = index;
+  } else {
+    level.head = index;
+  }
+  level.tail = index;
+  level.total_qty += order.remaining_qty;
+  level.order_count++;
+}
+
+void OrderBook::unlink(PriceLevel &level, PoolIndex index) {
+  Order &order = pool[index];
+  // Left side
+  if (order.prev != kInvalidIndex) {
+    pool[order.prev].next = order.next;
+  } else {
+    level.head = order.next;
+  }
+  if (order.next != kInvalidIndex) {
+    pool[order.next].prev = order.prev;
+  } else {
+    level.tail = order.prev;
+  }
+  level.total_qty -= order.remaining_qty;
+  level.order_count--;
+  order.prev = kInvalidIndex;
+  order.next = kInvalidIndex;
+}
+
 void OrderBook::add_order(const Order &order) {
+  PoolIndex idx = pool.add_pool_order(order);
 
   switch (order.side) {
 
   case Side::Buy: {
     PriceLevel &price_list = bids[order.price];
-    price_list.orders.push_back(order);
-
-    // Keep track of the iterator to the inserted element
-    auto order_it = std::prev(price_list.orders.end());
-    order_map[order.id] = order_it;
-    price_list.total_qty += order.remaining_qty;
+    price_list.price = order.price;
+    push_back(price_list, idx);
+    order_map[order.id] = idx;
     break;
   }
 
   case Side::Sell: {
     PriceLevel &price_list = asks[order.price];
-    price_list.orders.push_back(order);
-
-    // Keep track of the iterator to the inserted element
-    auto order_it = std::prev(price_list.orders.end());
-    order_map[order.id] = order_it;
-    price_list.total_qty += order.remaining_qty;
+    price_list.price = order.price;
+    push_back(price_list, idx);
+    order_map[order.id] = idx;
     break;
   }
   }
@@ -38,17 +70,16 @@ bool OrderBook::remove_order(OrderId id) {
     return false;
   }
 
-  auto order_it = order_map_it->second;
-  Side side = order_it->side;
-  Price price = order_it->price;
+  PoolIndex idx = order_map_it->second;
+  Side side = pool[idx].side;
+  Price price = pool[idx].price;
 
   switch (side) {
   case Side::Buy: {
     auto price_it = bids.find(price);
     if (price_it != bids.end()) {
-      price_it->second.total_qty -= order_it->remaining_qty;
-      price_it->second.orders.erase(order_it);
-      if (price_it->second.orders.empty()) {
+      unlink(price_it->second, idx);
+      if (price_it->second.order_count == 0) {
         bids.erase(price_it);
       }
     }
@@ -58,9 +89,8 @@ bool OrderBook::remove_order(OrderId id) {
   case Side::Sell: {
     auto price_it = asks.find(price);
     if (price_it != asks.end()) {
-      price_it->second.total_qty -= order_it->remaining_qty;
-      price_it->second.orders.erase(order_it);
-      if (price_it->second.orders.empty()) {
+      unlink(price_it->second, idx);
+      if (price_it->second.order_count == 0) {
         asks.erase(price_it);
       }
     }
@@ -68,6 +98,7 @@ bool OrderBook::remove_order(OrderId id) {
   }
   }
 
+  pool.remove_pool_order(idx);
   order_map.erase(order_map_it);
 
   return true;
@@ -77,12 +108,14 @@ void OrderBook::cancel_order(OrderId id) {
 
   // Remove the order
   bool was_removed = remove_order(id);
-  if (was_removed) {
-    // events.push_back("[LOG] Order " + std::to_string(id) +
-    //  " successfully canceled.");
-  } else {
-    // events.push_back("[LOG] Cancel failed: Order " + std::to_string(id) +
-    //                  " could not be found ");
+  if (SHOULD_LOG) {
+    if (was_removed) {
+      events.push_back("[LOG] Order " + std::to_string(id) +
+                       " successfully canceled.");
+    } else {
+      events.push_back("[LOG] Cancel failed: Order " + std::to_string(id) +
+                       " could not be found ");
+    }
   }
 }
 
@@ -91,29 +124,29 @@ void OrderBook::match_buy(Order &order) {
   case Type::Market: {
     while (order.remaining_qty > 0 && !asks.empty()) {
       auto best = asks.begin();
-      auto &level = best->second;
-      auto &resting = level.orders.front();
+      PriceLevel &level = best->second;
+      Order &resting = pool[level.head];
 
       Qty fill = std::min(order.remaining_qty, resting.remaining_qty);
       order.remaining_qty -= fill;
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
-
-      //   last_trades.push_back(Trade{resting.id, order.id, resting.price,
-      //   fill});
+      if (SHOULD_LOG) {
+        last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      }
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
       }
     }
-    if (order.remaining_qty > 0) {
-      //   events.push_back("[LOG] Market buy order " + std::to_string(order.id)
-      //   +
-      //    " failed (insufficient asks)");
-    } else {
-      //   events.push_back("[LOG] Market buy order " + std::to_string(order.id)
-      //   +
-      //                    " successfully filled.");
+    if (SHOULD_LOG) {
+      if (order.remaining_qty > 0) {
+        events.push_back("[LOG] Market buy order " + std::to_string(order.id) +
+                         " failed (insufficient asks)");
+      } else {
+        events.push_back("[LOG] Market buy order " + std::to_string(order.id) +
+                         " successfully filled.");
+      }
     }
     break;
   }
@@ -125,25 +158,26 @@ void OrderBook::match_buy(Order &order) {
       if (best_ask > order.price)
         break; // Best is too expensive
 
-      auto &level = best->second;
-      auto &resting = level.orders.front();
+      PriceLevel &level = best->second;
+      Order &resting = pool[level.head];
 
       Qty fill = std::min(order.remaining_qty, resting.remaining_qty);
       order.remaining_qty -= fill;
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
 
-      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      if (SHOULD_LOG) {
+        last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      }
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
       }
     }
 
-    if (order.remaining_qty == 0) {
-      //   events.push_back("[LOG] Limit buy order " + std::to_string(order.id)
-      //   +
-      //                    " successfully filled.");
+    if (SHOULD_LOG && order.remaining_qty == 0) {
+      events.push_back("[LOG] Limit buy order " + std::to_string(order.id) +
+                       " successfully filled.");
     }
 
     break;
@@ -156,28 +190,30 @@ void OrderBook::match_sell(Order &order) {
   case Type::Market: {
     while (order.remaining_qty > 0 && !bids.empty()) {
       auto best = bids.begin();
-      auto &level = best->second;
-      auto &resting = level.orders.front();
+      PriceLevel &level = best->second;
+      Order &resting = pool[level.head];
 
       Qty fill = std::min(order.remaining_qty, resting.remaining_qty);
       order.remaining_qty -= fill;
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
 
-      last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      if (SHOULD_LOG) {
+        last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      }
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
       }
     }
-    if (order.remaining_qty > 0) {
-      //   events.push_back("[LOG] Market sell order " +
-      //   std::to_string(order.id) +
-      //                    " failed (insufficient bids)");
-    } else {
-      //   events.push_back("[LOG] Market sell order " +
-      //   std::to_string(order.id) +
-      //                    " successfully filled.");
+    if (SHOULD_LOG) {
+      if (order.remaining_qty > 0) {
+        events.push_back("[LOG] Market sell order " + std::to_string(order.id) +
+                         " failed (insufficient bids)");
+      } else {
+        events.push_back("[LOG] Market sell order " + std::to_string(order.id) +
+                         " successfully filled.");
+      }
     }
     break;
   }
@@ -189,26 +225,26 @@ void OrderBook::match_sell(Order &order) {
       if (best_bid < order.price)
         break; // Best is too cheap
 
-      auto &level = best->second;
-      auto &resting = level.orders.front();
+      PriceLevel &level = best->second;
+      Order &resting = pool[level.head];
 
       Qty fill = std::min(order.remaining_qty, resting.remaining_qty);
       order.remaining_qty -= fill;
       resting.remaining_qty -= fill;
       level.total_qty -= fill;
 
-      //   last_trades.push_back(Trade{resting.id, order.id, resting.price,
-      //   fill});
+      if (SHOULD_LOG) {
+        last_trades.push_back(Trade{resting.id, order.id, resting.price, fill});
+      }
 
       if (resting.remaining_qty == 0) {
         remove_order(resting.id);
       }
     }
 
-    if (order.remaining_qty == 0) {
-      // events.push_back("[LOG] Limit sell order " + std::to_string(order.id)
-      // +
-      //                  " successfully filled.");
+    if (SHOULD_LOG && order.remaining_qty == 0) {
+      events.push_back("[LOG] Limit sell order " + std::to_string(order.id) +
+                       " successfully filled.");
     }
 
     break;
@@ -229,12 +265,16 @@ void OrderBook::submit_order(Order &order) {
   if (order.remaining_qty > 0) {
     if (order.type == Type::Limit) {
       add_order(order);
-      //   events.push_back("[LOG] Limit order " + std::to_string(order.id) +
-      //                    " successfully added to book.");
+      if (SHOULD_LOG) {
+        events.push_back("[LOG] Limit order " + std::to_string(order.id) +
+                         " successfully added to book.");
+      }
     } else {
-      //   events.push_back("[LOG] Market Order " + std::to_string(order.id) +
-      //                    " could not be fully filled. Unfilled quantity: " +
-      //                    std::to_string(order.remaining_qty));
+      if (SHOULD_LOG) {
+        events.push_back("[LOG] Market Order " + std::to_string(order.id) +
+                         " could not be fully filled. Unfilled quantity: " +
+                         std::to_string(order.remaining_qty));
+      }
     }
   }
 }
@@ -266,7 +306,7 @@ Qty OrderBook::remaining_qty_of(OrderId id) const {
   if (order_it == order_map.end()) {
     throw std::out_of_range("remaining_qty_of: no such order id");
   }
-  return order_it->second->remaining_qty;
+  return pool[order_it->second].remaining_qty;
 }
 
 Side OrderBook::side_of(OrderId id) const {
@@ -274,7 +314,7 @@ Side OrderBook::side_of(OrderId id) const {
   if (order_it == order_map.end()) {
     throw std::out_of_range("side_of: no such order id");
   }
-  return order_it->second->side;
+  return pool[order_it->second].side;
 }
 
 Price OrderBook::price_of(OrderId id) const {
@@ -282,7 +322,7 @@ Price OrderBook::price_of(OrderId id) const {
   if (order_it == order_map.end()) {
     throw std::out_of_range("price_of: no such order id");
   }
-  return order_it->second->price;
+  return pool[order_it->second].price;
 }
 
 // ---- Top of book ----
@@ -324,14 +364,14 @@ size_t OrderBook::level_order_count(Side side, Price price) const {
     if (price_it == bids.end()) {
       return 0;
     }
-    return price_it->second.orders.size();
+    return price_it->second.order_count;
   }
   case Side::Sell: {
     auto price_it = asks.find(price);
     if (price_it == asks.end()) {
       return 0;
     }
-    return price_it->second.orders.size();
+    return price_it->second.order_count;
   }
   }
   return 0;
@@ -341,17 +381,17 @@ OrderId OrderBook::front_order_id(Side side, Price price) const {
   switch (side) {
   case Side::Buy: {
     auto price_it = bids.find(price);
-    if (price_it == bids.end() || price_it->second.orders.empty()) {
+    if (price_it == bids.end() || price_it->second.head == kInvalidIndex) {
       throw std::out_of_range("front_order_id: no such price level");
     }
-    return price_it->second.orders.front().id;
+    return pool[price_it->second.head].id;
   }
   case Side::Sell: {
     auto price_it = asks.find(price);
-    if (price_it == asks.end() || price_it->second.orders.empty()) {
+    if (price_it == asks.end() || price_it->second.head == kInvalidIndex) {
       throw std::out_of_range("front_order_id: no such price level");
     }
-    return price_it->second.orders.front().id;
+    return pool[price_it->second.head].id;
   }
   }
   throw std::invalid_argument("front_order_id: invalid side");
@@ -362,7 +402,7 @@ OrderId OrderBook::front_order_id(Side side, Price price) const {
 size_t OrderBook::bid_count() const {
   size_t count = 0;
   for (const auto &entry : bids) {
-    count += entry.second.orders.size();
+    count += entry.second.order_count;
   }
   return count;
 }
@@ -370,7 +410,7 @@ size_t OrderBook::bid_count() const {
 size_t OrderBook::ask_count() const {
   size_t count = 0;
   for (const auto &entry : asks) {
-    count += entry.second.orders.size();
+    count += entry.second.order_count;
   }
   return count;
 }

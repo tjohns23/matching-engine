@@ -69,6 +69,8 @@ template <typename T> T parse_int_or_zero(std::string_view text) {
 std::vector<Operation> read_operations(const std::string &csv_path) {
   std::vector<Operation> operations;
 
+  operations.reserve(40000000);
+
   // lazycsv defaults to mmap under the hood
   lazycsv::parser parser{csv_path};
 

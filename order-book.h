@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "order-pool.h"
 #include "order.h"
 
 struct Trade {
@@ -22,14 +23,17 @@ struct Trade {
 struct PriceLevel {
   Price price;
   Qty total_qty = 0;
-  std::list<Order> orders;
+  PoolIndex head = kInvalidIndex;
+  PoolIndex tail = kInvalidIndex;
+  std::uint32_t order_count = 0;
 };
 
 class OrderBook {
 private:
   std::map<Price, PriceLevel, std::greater<Price>> bids;
   std::map<Price, PriceLevel> asks;
-  std::unordered_map<OrderId, std::list<Order>::iterator> order_map;
+  std::unordered_map<OrderId, PoolIndex> order_map;
+  OrderPool pool;
   std::vector<Trade> last_trades;
   std::vector<std::string> events;
 
@@ -37,9 +41,13 @@ private:
   bool remove_order(OrderId id);
   void match_buy(Order &order);
   void match_sell(Order &order);
-  void match(Order &order);
+
+  void push_back(PriceLevel &level, PoolIndex index);
+  void unlink(PriceLevel &level, PoolIndex index);
 
 public:
+  OrderBook() : pool(40000000) {}
+
   void submit_order(Order &order);
   void cancel_order(OrderId id);
 
