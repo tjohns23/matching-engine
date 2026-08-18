@@ -220,6 +220,7 @@ void apply_operation(OrderBook &book, Operation &operation) {
   }
 }
 
+// Ensure invariants aren't violated
 void run_invariant_mode(std::vector<Operation> &operations) {
   OrderBook book;
   InvariantChecker checker;

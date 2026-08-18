@@ -23,7 +23,7 @@ void OrderBook::push_back(PriceLevel &level, PoolIndex index) {
 
 void OrderBook::unlink(PriceLevel &level, PoolIndex index) {
   Order &order = pool[index];
-  // Left side
+
   if (order.prev != kInvalidIndex) {
     pool[order.prev].next = order.next;
   } else {
@@ -41,23 +41,23 @@ void OrderBook::unlink(PriceLevel &level, PoolIndex index) {
 }
 
 void OrderBook::add_order(const Order &order) {
-  PoolIndex idx = pool.add_pool_order(order);
+  PoolIndex index = pool.add_pool_order(order);
 
   switch (order.side) {
 
   case Side::Buy: {
     PriceLevel &price_list = bids[order.price];
     price_list.price = order.price;
-    push_back(price_list, idx);
-    order_map[order.id] = idx;
+    push_back(price_list, index);
+    order_map[order.id] = index;
     break;
   }
 
   case Side::Sell: {
     PriceLevel &price_list = asks[order.price];
     price_list.price = order.price;
-    push_back(price_list, idx);
-    order_map[order.id] = idx;
+    push_back(price_list, index);
+    order_map[order.id] = index;
     break;
   }
   }
@@ -70,35 +70,35 @@ bool OrderBook::remove_order(OrderId id) {
     return false;
   }
 
-  PoolIndex idx = order_map_it->second;
-  Side side = pool[idx].side;
-  Price price = pool[idx].price;
+  PoolIndex index = order_map_it->second;
+  Side side = pool[index].side;
+  Price price = pool[index].price;
 
   switch (side) {
   case Side::Buy: {
-    auto price_it = bids.find(price);
-    if (price_it != bids.end()) {
-      unlink(price_it->second, idx);
-      if (price_it->second.order_count == 0) {
-        bids.erase(price_it);
+    auto price_level_it = bids.find(price);
+    if (price_level_it != bids.end()) {
+      unlink(price_level_it->second, index);
+      if (price_level_it->second.order_count == 0) {
+        bids.erase(price_level_it);
       }
     }
     break;
   }
 
   case Side::Sell: {
-    auto price_it = asks.find(price);
-    if (price_it != asks.end()) {
-      unlink(price_it->second, idx);
-      if (price_it->second.order_count == 0) {
-        asks.erase(price_it);
+    auto price_level_it = asks.find(price);
+    if (price_level_it != asks.end()) {
+      unlink(price_level_it->second, index);
+      if (price_level_it->second.order_count == 0) {
+        asks.erase(price_level_it);
       }
     }
     break;
   }
   }
 
-  pool.remove_pool_order(idx);
+  pool.remove_pool_order(index);
   order_map.erase(order_map_it);
 
   return true;
