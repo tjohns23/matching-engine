@@ -47,15 +47,24 @@ target_link_libraries(order_pool_tests
     GTest::gtest_main
 )
 
+add_executable(price_level_array_tests tests/price-level-array-tests.cpp)
+target_link_libraries(price_level_array_tests
+    PRIVATE
+    order_book_core
+    GTest::gtest_main
+)
+
 # Statically link MinGW runtime to avoid missing DLL errors (0xc0000139)
 if (MINGW)
     target_link_options(order_book_tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_link_options(order_pool_tests PRIVATE -static -static-libgcc -static-libstdc++)
+    target_link_options(price_level_array_tests PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 
 include(GoogleTest)
 gtest_discover_tests(order_book_tests)
 gtest_discover_tests(order_pool_tests)
+gtest_discover_tests(price_level_array_tests)
 
 # --- Simulation Executable ---
 add_executable(simulation simulation.cpp)

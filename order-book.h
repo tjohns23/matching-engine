@@ -3,8 +3,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <list>
-#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -12,6 +10,7 @@
 
 #include "order-pool.h"
 #include "order.h"
+#include "price-level-array.h"
 
 struct Trade {
   OrderId maker_order_id;
@@ -20,18 +19,13 @@ struct Trade {
   Qty qty;
 };
 
-struct PriceLevel {
-  Price price;
-  Qty total_qty = 0;
-  PoolIndex head = kInvalidIndex;
-  PoolIndex tail = kInvalidIndex;
-  std::uint32_t order_count = 0;
-};
-
 class OrderBook {
 private:
-  std::map<Price, PriceLevel, std::greater<Price>> bids;
-  std::map<Price, PriceLevel> asks;
+  Price min_price;
+  Price max_price;
+  Price tick_size;
+  priceLevelArray bids;
+  priceLevelArray asks;
   std::unordered_map<OrderId, PoolIndex> order_map;
   OrderPool pool;
   std::vector<Trade> last_trades;
@@ -46,7 +40,13 @@ private:
   void unlink(PriceLevel &level, PoolIndex index);
 
 public:
-  OrderBook() : pool(40000000) {}
+  OrderBook(Price pmin = 0, Price pmax = 200000, Price tick = 1)
+      : min_price(pmin),
+        max_price(pmax),
+        tick_size(tick),
+        bids(pmin, pmax, tick),
+        asks(pmin, pmax, tick),
+        pool(40000000) {}
 
   void submit_order(Order &order);
   void cancel_order(OrderId id);
