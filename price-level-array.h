@@ -26,6 +26,10 @@ private:
   size_t num_levels;
   std::vector<PriceLevel> priceLevels;
   std::vector<uint64_t> bitmap;
+  size_t active_count;
+  size_t lowest_active_index;
+  size_t highest_active_index;
+  static constexpr size_t npos = static_cast<size_t>(-1);
 
   inline size_t price_to_index(Price price) const {
     if (price < min_price || price > max_price) {
@@ -52,6 +56,53 @@ private:
     return (bitmap[index / 64] & (1ULL << (index % 64))) != 0;
   }
 
+  size_t find_next_active(size_t start) const {
+    if (start >= num_levels) {
+      return npos;
+    }
+
+    size_t word_index = start / 64u;
+    uint64_t word = bitmap[word_index] & (~0ULL << (start % 64u));
+    while (true) {
+      if (word != 0ULL) {
+        size_t index = word_index * 64u +
+                       static_cast<size_t>(__builtin_ctzll(word));
+        return index < num_levels ? index : npos;
+      }
+
+      word_index++;
+      if (word_index >= bitmap.size()) {
+        return npos;
+      }
+      word = bitmap[word_index];
+    }
+  }
+
+  size_t find_prev_active(size_t start) const {
+    if (num_levels == 0) {
+      return npos;
+    }
+    if (start >= num_levels) {
+      start = num_levels - 1u;
+    }
+
+    size_t word_index = start / 64u;
+    uint64_t word = bitmap[word_index] &
+                    (~0ULL >> (63u - static_cast<unsigned>(start % 64u)));
+    while (true) {
+      if (word != 0ULL) {
+        return word_index * 64u +
+               static_cast<size_t>(63 - __builtin_clzll(word));
+      }
+
+      if (word_index == 0) {
+        return npos;
+      }
+      word_index--;
+      word = bitmap[word_index];
+    }
+  }
+
 public:
   priceLevelArray(Price min_price, Price max_price, Price tick_size = 1)
       : min_price(min_price),
@@ -59,7 +110,10 @@ public:
         tick_size(tick_size),
         num_levels(0),
         priceLevels(),
-        bitmap() {
+        bitmap(),
+        active_count(0),
+        lowest_active_index(npos),
+        highest_active_index(npos) {
     if (tick_size <= 0) {
       throw std::invalid_argument("tick_size must be positive");
     }
@@ -112,43 +166,54 @@ public:
     }
 
     size_t index = static_cast<size_t>(offset / tick_size);
-    if (priceLevels[index].order_count > 0) {
+    bool was_active = is_active(index);
+    bool now_active = priceLevels[index].order_count > 0;
+
+    if (now_active) {
       mark_active(index);
+      if (!was_active) {
+        active_count++;
+        if (lowest_active_index == npos || index < lowest_active_index) {
+          lowest_active_index = index;
+        }
+        if (highest_active_index == npos || index > highest_active_index) {
+          highest_active_index = index;
+        }
+      }
     } else {
       mark_inactive(index);
+      if (was_active) {
+        active_count--;
+        if (active_count == 0) {
+          lowest_active_index = npos;
+          highest_active_index = npos;
+        } else {
+          if (index == lowest_active_index) {
+            lowest_active_index = find_next_active(index + 1u);
+          }
+          if (index == highest_active_index) {
+            highest_active_index =
+                index == 0 ? npos : find_prev_active(index - 1u);
+          }
+        }
+      }
     }
   }
 
   std::optional<Price> best_bid() const {
-    if (bitmap.empty()) {
+    if (highest_active_index == npos) {
       return std::nullopt;
     }
 
-    for (int word_index = static_cast<int>(bitmap.size()) - 1; word_index >= 0;
-         --word_index) {
-      uint64_t word = bitmap[static_cast<size_t>(word_index)];
-      if (word != 0ULL) {
-        int bit_index = 63 - __builtin_clzll(word);
-        size_t index = static_cast<size_t>(word_index) * 64u +
-                       static_cast<size_t>(bit_index);
-        return priceLevels[index].price;
-      }
-    }
-
-    return std::nullopt;
+    return priceLevels[highest_active_index].price;
   }
 
   std::optional<Price> best_ask() const {
-    for (size_t word_index = 0; word_index < bitmap.size(); ++word_index) {
-      uint64_t word = bitmap[word_index];
-      if (word != 0ULL) {
-        int bit_index = __builtin_ctzll(word);
-        size_t index = word_index * 64u + static_cast<size_t>(bit_index);
-        return priceLevels[index].price;
-      }
+    if (lowest_active_index == npos) {
+      return std::nullopt;
     }
 
-    return std::nullopt;
+    return priceLevels[lowest_active_index].price;
   }
 
   Price get_min_price() const { return min_price; }

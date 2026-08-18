@@ -32,6 +32,13 @@
 #include <unordered_map>
 #include <vector>
 
+#if defined(__linux__)
+#include <linux/perf_event.h>
+#include <sys/syscall.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+
 // ---------------------------------------------------------------------
 // One row of the input CSV, already parsed into real types.
 // ---------------------------------------------------------------------
@@ -220,6 +227,119 @@ void apply_operation(OrderBook &book, Operation &operation) {
   }
 }
 
+class LoopPerfCounters {
+public:
+  void start() {
+#if defined(__linux__)
+    open_counter(cache_refs_fd, PERF_TYPE_HARDWARE,
+                 PERF_COUNT_HW_CACHE_REFERENCES);
+    open_counter(cache_misses_fd, PERF_TYPE_HARDWARE,
+                 PERF_COUNT_HW_CACHE_MISSES);
+    open_counter(l1_loads_fd, PERF_TYPE_HW_CACHE,
+                 PERF_COUNT_HW_CACHE_L1D |
+                     (PERF_COUNT_HW_CACHE_OP_READ << 8) |
+                     (PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16));
+    open_counter(l1_load_misses_fd, PERF_TYPE_HW_CACHE,
+                 PERF_COUNT_HW_CACHE_L1D |
+                     (PERF_COUNT_HW_CACHE_OP_READ << 8) |
+                     (PERF_COUNT_HW_CACHE_RESULT_MISS << 16));
+
+    reset_and_enable(cache_refs_fd);
+    reset_and_enable(cache_misses_fd);
+    reset_and_enable(l1_loads_fd);
+    reset_and_enable(l1_load_misses_fd);
+#endif
+  }
+
+  void stop_and_print() {
+#if defined(__linux__)
+    disable(cache_refs_fd);
+    disable(cache_misses_fd);
+    disable(l1_loads_fd);
+    disable(l1_load_misses_fd);
+
+    std::uint64_t cache_refs = read_counter(cache_refs_fd);
+    std::uint64_t cache_misses = read_counter(cache_misses_fd);
+    std::uint64_t l1_loads = read_counter(l1_loads_fd);
+    std::uint64_t l1_load_misses = read_counter(l1_load_misses_fd);
+
+    close_counter(cache_refs_fd);
+    close_counter(cache_misses_fd);
+    close_counter(l1_loads_fd);
+    close_counter(l1_load_misses_fd);
+
+    if (cache_refs > 0) {
+      double miss_rate = static_cast<double>(cache_misses) /
+                         static_cast<double>(cache_refs) * 100.0;
+      std::cout << "engine cache misses: " << cache_misses << " / "
+                << cache_refs << " (" << miss_rate << "%)\n";
+    }
+    if (l1_loads > 0) {
+      double miss_rate = static_cast<double>(l1_load_misses) /
+                         static_cast<double>(l1_loads) * 100.0;
+      std::cout << "engine L1D load misses: " << l1_load_misses << " / "
+                << l1_loads << " (" << miss_rate << "%)\n";
+    }
+#endif
+  }
+
+private:
+#if defined(__linux__)
+  int cache_refs_fd = -1;
+  int cache_misses_fd = -1;
+  int l1_loads_fd = -1;
+  int l1_load_misses_fd = -1;
+
+  static long perf_event_open(perf_event_attr *attr, pid_t pid, int cpu,
+                              int group_fd, unsigned long flags) {
+    return syscall(__NR_perf_event_open, attr, pid, cpu, group_fd, flags);
+  }
+
+  static void open_counter(int &fd, std::uint32_t type, std::uint64_t config) {
+    perf_event_attr attr{};
+    attr.type = type;
+    attr.size = sizeof(attr);
+    attr.config = config;
+    attr.disabled = 1;
+    attr.exclude_kernel = 1;
+    attr.exclude_hv = 1;
+
+    fd = static_cast<int>(perf_event_open(&attr, 0, -1, -1, 0));
+  }
+
+  static void reset_and_enable(int fd) {
+    if (fd >= 0) {
+      ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+      ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+    }
+  }
+
+  static void disable(int fd) {
+    if (fd >= 0) {
+      ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+    }
+  }
+
+  static std::uint64_t read_counter(int fd) {
+    std::uint64_t value = 0;
+    if (fd >= 0) {
+      ssize_t bytes = read(fd, &value, sizeof(value));
+      if (bytes != static_cast<ssize_t>(sizeof(value))) {
+        return 0;
+      }
+    }
+    return value;
+  }
+
+  static void close_counter(int &fd) {
+    if (fd >= 0) {
+      close(fd);
+      fd = -1;
+    }
+  }
+#endif
+};
+
 // Ensure invariants aren't violated
 void run_invariant_mode(std::vector<Operation> &operations) {
   OrderBook book;
@@ -239,13 +359,16 @@ void run_invariant_mode(std::vector<Operation> &operations) {
 
 void run_perf_mode(std::vector<Operation> &operations) {
   OrderBook book;
+  LoopPerfCounters counters;
 
   // Isolate strictly the engine execution loop
+  counters.start();
   auto start = std::chrono::steady_clock::now();
   for (Operation &operation : operations) {
     apply_operation(book, operation);
   }
   auto end = std::chrono::steady_clock::now();
+  counters.stop_and_print();
 
   double seconds = std::chrono::duration<double>(end - start).count();
   double ops_per_second = operations.size() / seconds;

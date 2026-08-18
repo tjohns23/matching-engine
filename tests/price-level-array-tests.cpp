@@ -55,6 +55,31 @@ TEST(PriceLevelArray, BestBidAndBestAskReturnActivePriceLevels) {
   EXPECT_EQ(levels.best_ask().value(), 100);
 }
 
+TEST(PriceLevelArray, BestPricesMoveWhenEdgeLevelsBecomeInactive) {
+  priceLevelArray levels(100, 110);
+
+  for (Price price : {100, 103, 107, 110}) {
+    levels.get_level(price).order_count = 1;
+    levels.on_level_updated(price);
+  }
+
+  levels.get_level(110).order_count = 0;
+  levels.on_level_updated(110);
+  EXPECT_EQ(levels.best_bid().value(), 107);
+
+  levels.get_level(100).order_count = 0;
+  levels.on_level_updated(100);
+  EXPECT_EQ(levels.best_ask().value(), 103);
+
+  for (Price price : {103, 107}) {
+    levels.get_level(price).order_count = 0;
+    levels.on_level_updated(price);
+  }
+
+  EXPECT_FALSE(levels.best_bid().has_value());
+  EXPECT_FALSE(levels.best_ask().has_value());
+}
+
 TEST(PriceLevelArray, OutOfRangePricesAreIgnoredByOnLevelUpdated) {
   priceLevelArray levels(100, 105);
 
